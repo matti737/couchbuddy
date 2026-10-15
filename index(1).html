@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16233A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Couchbuddy">
+<title>Couchbuddy</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛋️</text></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%2316233A'/><text x='50' y='68' font-size='60' text-anchor='middle'>🛋️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF1F6; --surface:#FFFFFF; --ink:#16233A; --muted:#5B6780; --line:#D9DFEA; --accent:#2F5BEA; --new:#1F8A4C;
+  --netflix:#E50914; --prime:#00A8E1; --disney:#113CCF; --vrt:#E8511E; --vtm:#C2006F;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#111724;--surface:#1B2334;--ink:#E8EDF6;--muted:#97A3BA;--line:#2A3448;--accent:#7C9BFF;--new:#4CC98A;}
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Onest,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.45;
+  padding-top:env(safe-area-inset-top,0px)}
+main{max-width:640px;margin:0 auto;padding:16px 16px calc(96px + env(safe-area-inset-bottom,0px))}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 12px}
+h1{font-size:1.75rem;font-weight:800;letter-spacing:-.02em;margin:0;line-height:1.1}
+h2.group{font-size:1rem;margin:22px 0 2px}
+.icon-btn{background:none;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:8px 14px;font:inherit;font-size:.9rem;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* tabs */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;justify-content:center;gap:8px;
+  background:var(--surface);border-top:1px solid var(--line);padding:8px 16px calc(8px + env(safe-area-inset-bottom,0px))}
+nav.tabs button{flex:1;max-width:240px;font:inherit;font-weight:700;padding:10px;border-radius:12px;border:0;background:none;color:var(--muted);cursor:pointer;position:relative}
+nav.tabs button[aria-selected=true]{background:var(--bg);color:var(--ink)}
+.badge{display:inline-block;min-width:20px;padding:0 6px;margin-left:6px;border-radius:999px;background:var(--new);color:#fff;font-size:.75rem;line-height:20px}
+.badge:empty{display:none}
+[hidden]{display:none!important}
+
+/* search */
+.search{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:4px 0 12px}
+.search form{display:flex;gap:8px}
+.search input{flex:1;min-width:0;font:inherit;font-size:1.05rem;padding:14px 16px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink)}
+.search input:focus{outline:none;border-color:var(--accent)}
+.search button,.primary{font:inherit;font-weight:700;padding:0 18px;border-radius:14px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+.filter{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.9rem;color:var(--muted)}
+.status{color:var(--muted);padding:24px 4px;text-align:center}
+
+/* items */
+.result{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+.poster{width:72px;flex:none;aspect-ratio:2/3;border-radius:8px;background:var(--line);object-fit:cover}
+.info{flex:1;min-width:0}
+.title{font-weight:700;font-size:1.05rem;margin:0 0 2px}
+.meta{color:var(--muted);font-size:.85rem;margin:0 0 10px}
+.meta.fresh{color:var(--new);font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;color:#fff;font-weight:700;font-size:.85rem}
+.chip.optional{opacity:.8}
+.none{font-size:.9rem;color:var(--muted);margin:0}
+.elsewhere{font-size:.8rem;color:var(--muted);margin:8px 0 0}
+.elsewhere a{color:var(--accent)}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.small{font:inherit;font-size:.85rem;font-weight:500;padding:6px 12px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.small.on{border-color:var(--new);color:var(--new);font-weight:700}
+.small.go{background:var(--new);border-color:var(--new);color:#fff;font-weight:700}
+select.small{padding-right:8px}
+.remove{margin-left:auto;color:var(--muted)}
+details.finished summary{cursor:pointer;font-weight:700;margin:22px 0 2px}
+.syncline{font-size:.8rem;color:var(--muted);text-align:center;margin-top:28px}
+.syncline.warn{color:var(--vrt)}
+
+/* settings */
+dialog{border:0;border-radius:18px;padding:0;width:min(92vw,460px);max-height:88vh;background:var(--surface);color:var(--ink)}
+dialog::backdrop{background:rgba(10,15,30,.55)}
+.sheet{padding:20px}
+.sheet h2{margin:0 0 4px;font-size:1.3rem}
+.sheet h3{margin:22px 0 2px;font-size:1rem}
+.sheet p{color:var(--muted);font-size:.85rem;margin:4px 0 8px}
+.sheet label.field{display:block;font-weight:500;margin:14px 0 6px}
+.sheet input[type=text],.sheet input[type=password],.sheet select{width:100%;font:inherit;padding:11px 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink)}
+.svc{display:flex;align-items:center;gap:10px;padding:6px 0;font-weight:500}
+.svc .dot{width:14px;height:14px;border-radius:50%}
+.svc input{width:20px;height:20px}
+.sheet .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.sheet .row.end{justify-content:flex-end;margin-top:22px}
+.sheet .primary{padding:10px 18px;border-radius:10px}
+@media (prefers-reduced-motion:no-preference){.result{animation:in .25s ease both}@keyframes in{from{opacity:0}}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Couchbuddy</h1>
+    <button class="icon-btn" id="openSettings" type="button">Settings</button>
+  </header>
+
+  <section id="tab-search" role="tabpanel">
+    <div class="search">
+      <form id="searchForm">
+        <input id="q" type="search" placeholder="Film or series title" autocomplete="off" enterkeyhint="search" aria-label="Search title">
+        <button type="submit">Search</button>
+      </form>
+      <label class="filter"><input type="checkbox" id="onlyMine"> Only show titles on my services</label>
+    </div>
+    <div id="results" aria-live="polite"></div>
+  </section>
+
+  <section id="tab-watching" role="tabpanel" hidden>
+    <div id="watchList" aria-live="polite"></div>
+    <p class="syncline" id="syncLine"></p>
+  </section>
+</main>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" id="btn-watching" data-tab="watching" aria-selected="false">Watching<span class="badge" id="newBadge"></span></button>
+  <button role="tab" id="btn-search" data-tab="search" aria-selected="true">Search</button>
+</nav>
+
+<dialog id="settings">
+  <form method="dialog" class="sheet" id="settingsForm">
+    <h2>Settings</h2>
+
+    <label class="field" for="apiKey">TMDB API key or read access token</label>
+    <input type="password" id="apiKey" autocomplete="off" spellcheck="false" placeholder="From themoviedb.org → Settings → API">
+
+    <label class="field" for="lang">Title language</label>
+    <select id="lang">
+      <option value="en-US">English</option>
+      <option value="nl-BE">Nederlands (België)</option>
+    </select>
+
+    <label class="field">My services</label>
+    <div id="svcList"></div>
+
+    <h3>Backup &amp; sync</h3>
+    <p>Saves your list and settings to a private GitHub Gist after every change. On a new device, paste the same token to restore everything.</p>
+    <label class="field" for="ghToken">GitHub token (gist access only)</label>
+    <input type="password" id="ghToken" autocomplete="off" spellcheck="false" placeholder="ghp_…">
+    <p id="syncStatus"></p>
+    <div class="row">
+      <button type="button" class="small" id="syncNow">Sync now</button>
+      <button type="button" class="small" id="exportBtn">Download backup file</button>
+      <button type="button" class="small" id="importBtn">Restore from file</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+
+    <div class="row end"><button class="primary" value="save">Save</button></div>
+  </form>
+</dialog>
+
+<script>
+const COUNTRY = 'BE';
+const SERVICES = [
+  {id:'netflix', label:'Netflix',     color:'var(--netflix)', match:n => n.includes('netflix'),                            optional:false},
+  {id:'prime',   label:'Prime Video', color:'var(--prime)',   match:n => n.includes('amazon prime video'),                 optional:false},
+  {id:'disney',  label:'Disney+',     color:'var(--disney)',  match:n => n.includes('disney plus')||n.includes('disney+'), optional:false},
+  {id:'vrt',     label:'VRT MAX',     color:'var(--vrt)',     match:n => n.includes('vrt'),                                optional:true},
+  {id:'vtm',     label:'VTM GO',      color:'var(--vtm)',     match:n => n.includes('vtm'),                                optional:true},
+];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const today = () => new Date().toISOString().slice(0,10);
+const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('nl-BE', {day:'numeric', month:'short', year:'numeric'});
+
+/* ================= state & local storage ================= */
+// state is synced; sync holds device-only info (GitHub token, gist id)
+const DEFAULT_SETTINGS = {apiKey:'', lang:'en-US', services:SERVICES.map(s=>s.id), onlyMine:false, tab:'search'};
+function readLS(k){ try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
+function writeLS(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
+
+let state = readLS('couchbuddy') || {settings:{}, watching:{}, updatedAt:0};
+const legacy = readLS('wtw-settings');
+if (legacy && !state.settings.apiKey) state.settings = legacy;           // migrate from first version
+state.settings = Object.assign({}, DEFAULT_SETTINGS, state.settings);
+state.watching = state.watching || {};
+let sync = readLS('couchbuddy-sync') || {token:'', gistId:'', lastSync:0, error:''};
+
+const settings = () => state.settings;
+function persist(){                       // call after any change to synced data
+  state.updatedAt = Date.now();
+  writeLS('couchbuddy', state);
+  scheduleSync();
+}
+if (navigator.storage?.persist) navigator.storage.persist().catch(()=>{});
+
+/* ================= GitHub Gist sync ================= */
+const GIST_FILE = 'couchbuddy.json';
+async function gh(path, opts = {}){
+  const res = await fetch('https://api.github.com' + path, {...opts, headers:{
+    Authorization:'Bearer ' + sync.token, Accept:'application/vnd.github+json',
+    ...(opts.body ? {'Content-Type':'application/json'} : {})}});
+  if (res.status === 401) throw new Error('GitHub rejected the token.');
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('GitHub error ' + res.status + '.');
+  return res.json();
+}
+async function findGist(){
+  if (sync.gistId){ const g = await gh('/gists/' + sync.gistId); if (g) return g; }
+  const list = await gh('/gists?per_page=100') || [];
+  const hit = list.find(g => g.files && g.files[GIST_FILE]);
+  return hit ? gh('/gists/' + hit.id) : null;
+}
+async function readGistContent(g){
+  const f = g.files[GIST_FILE];
+  if (f.truncated) return (await fetch(f.raw_url)).json();
+  return JSON.parse(f.content);
+}
+async function push(){
+  const body = JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify(state, null, 1)}}});
+  if (sync.gistId) await gh('/gists/' + sync.gistId, {method:'PATCH', body});
+  else {
+    const g = await gh('/gists', {method:'POST', body:JSON.stringify({description:'Couchbuddy data (do not delete)', public:false, files:{[GIST_FILE]:{content:JSON.stringify(state, null, 1)}}})});
+    sync.gistId = g.id;
+  }
+}
+let syncTimer = null, syncing = false;
+function scheduleSync(){ if (!sync.token) { renderSyncInfo(); return; } clearTimeout(syncTimer); syncTimer = setTimeout(doSync, 1500); }
+async function doSync({pullFirst = false} = {}){
+  if (!sync.token || syncing) return;
+  syncing = true; renderSyncInfo('Syncing…');
+  try {
+    const firstLink = !sync.gistId;
+    if (pullFirst || firstLink){
+      const g = await findGist();
+      if (g){
+        const remote = await readGistContent(g);
+        sync.gistId = g.id;
+        if (firstLink){
+          // Linking a device: the backup wins, but keep any shows only this device has.
+          const localOnly = Object.fromEntries(Object.entries(state.watching).filter(([id]) => !remote.watching?.[id]));
+          state = {...remote, watching:{...remote.watching, ...localOnly}, settings:Object.assign({}, DEFAULT_SETTINGS, remote.settings)};
+          if (!state.settings.apiKey && $('apiKey').value) state.settings.apiKey = $('apiKey').value.trim();
+          state.updatedAt = Date.now();
+          writeLS('couchbuddy', state);
+          await push();
+        } else if ((remote.updatedAt||0) > (state.updatedAt||0)){
+          state = {...remote, settings:Object.assign({}, DEFAULT_SETTINGS, remote.settings)};
+          writeLS('couchbuddy', state);
+        } else if ((remote.updatedAt||0) < (state.updatedAt||0)) await push();
+        refreshAll();
+      } else await push();
+    } else await push();
+    sync.lastSync = Date.now(); sync.error = '';
+  } catch (e){ sync.error = e.message || 'Sync failed.'; }
+  syncing = false;
+  writeLS('couchbuddy-sync', sync);
+  renderSyncInfo();
+}
+function renderSyncInfo(msg){
+  let text, warn = false;
+  if (msg) text = msg;
+  else if (!sync.token){ text = 'Not backed up. Set up sync in Settings.'; warn = true; }
+  else if (sync.error){ text = 'Backup failed: ' + sync.error; warn = true; }
+  else if (sync.lastSync) text = 'Backed up ' + new Date(sync.lastSync).toLocaleString('nl-BE', {dateStyle:'short', timeStyle:'short'});
+  else text = 'Backup pending';
+  $('syncLine').textContent = text; $('syncLine').classList.toggle('warn', warn);
+  $('syncStatus').textContent = text;
+}
+
+/* ================= TMDB ================= */
+async function tmdb(path, params = {}){
+  const url = new URL('https://api.themoviedb.org/3' + path);
+  const key = settings().apiKey, headers = {accept:'application/json'};
+  if (key.startsWith('eyJ')) headers.Authorization = 'Bearer ' + key; else url.searchParams.set('api_key', key);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+  const res = await fetch(url, {headers});
+  if (res.status === 401) throw new Error('auth');
+  if (!res.ok) throw new Error('http ' + res.status);
+  return res.json();
+}
+async function providersFor(type, id){
+  try { return (await tmdb(`/${type}/${id}/watch/providers`)).results?.[COUNTRY] || null; } catch { return null; }
+}
+function classify(p){
+  const offers = [...(p?.flatrate||[]), ...(p?.free||[]), ...(p?.ads||[])];
+  const mine = new Set(), others = new Set();
+  for (const o of offers){
+    const svc = SERVICES.find(s => s.match(o.provider_name.toLowerCase()));
+    if (svc && settings().services.includes(svc.id)) mine.add(svc.id);
+    else if (!svc) others.add(o.provider_name);
+  }
+  return {mine:[...mine], others:[...others], link:p?.link};
+}
+function availabilityHTML(a){
+  const chips = a.mine.map(id => { const s = SERVICES.find(x => x.id === id);
+    return `<span class="chip${s.optional?' optional':''}" style="background:${s.color}">${s.label}</span>`; }).join('');
+  return (chips ? `<div class="chips">${chips}</div>` : `<p class="none">Not on your services</p>`)
+    + (a.others.length ? `<p class="elsewhere">Also on: ${esc(a.others.join(', '))}</p>` : '')
+    + (a.link ? `<p class="elsewhere"><a href="${esc(a.link)}" target="_blank" rel="noopener">All options incl. rent/buy</a></p>` : '');
+}
+const posterHTML = p => p ? `<img class="poster" src="https://image.tmdb.org/t/p/w185${p}" alt="" loading="lazy">` : `<div class="poster"></div>`;
+
+/* ================= search tab ================= */
+let lastResults = [];
+async function runSearch(){
+  const q = $('q').value.trim(), out = $('results');
+  if (!q) return;
+  if (!settings().apiKey){ out.innerHTML = `<p class="status">Add your TMDB key in Settings to start searching.</p>`; return; }
+  out.innerHTML = `<p class="status">Searching…</p>`;
+  try {
+    const data = await tmdb('/search/multi', {query:q, language:settings().lang, include_adult:'false'});
+    const items = data.results.filter(r => r.media_type === 'movie' || r.media_type === 'tv').slice(0, 12);
+    const provs = await Promise.all(items.map(it => providersFor(it.media_type, it.id)));
+    lastResults = items.map((it, i) => ({...it, avail:classify(provs[i])}));
+    renderSearch();
+  } catch (e){
+    out.innerHTML = `<p class="status">${e.message === 'auth' ? 'TMDB rejected the key. Check it in Settings.' : 'Search failed. Check your connection and try again.'}</p>`;
+  }
+}
+function renderSearch(){
+  const out = $('results');
+  if (!lastResults.length){ out.innerHTML = ''; return; }
+  const shown = settings().onlyMine ? lastResults.filter(r => r.avail.mine.length) : lastResults;
+  if (!shown.length){ out.innerHTML = `<p class="status">None of these titles are on your services in Belgium right now.</p>`; return; }
+  out.innerHTML = shown.map(r => {
+    const year = (r.release_date || r.first_air_date || '').slice(0,4);
+    const isTv = r.media_type === 'tv', tracked = isTv && state.watching[r.id];
+    const btn = isTv ? `<div class="actions"><button class="small${tracked?' on':''}" data-track="${r.id}">${tracked ? '✓ Watching' : '+ Add to Watching'}</button></div>` : '';
+    return `<article class="result">${posterHTML(r.poster_path)}<div class="info">
+      <p class="title">${esc(r.title || r.name)}</p><p class="meta">${isTv?'Series':'Film'}${year?' ('+year+')':''}</p>
+      ${availabilityHTML(r.avail)}${btn}</div></article>`;
+  }).join('');
+}
+$('results').addEventListener('click', e => {
+  const b = e.target.closest('[data-track]'); if (!b) return;
+  const id = b.dataset.track, r = lastResults.find(x => String(x.id) === id);
+  if (state.watching[id]) delete state.watching[id];
+  else state.watching[id] = {id:+id, name:r.name, poster:r.poster_path, seen:0, added:Date.now()};
+  persist(); renderSearch(); renderWatching();
+});
+
+/* ================= watching tab ================= */
+const details = {};      // tmdb tv details, per session
+const seasonAvail = {};  // providers for shows with a new season
+async function loadDetails(ids){
+  await Promise.all(ids.filter(id => !details[id]).map(async id => {
+    try { details[id] = await tmdb('/tv/' + id, {language:settings().lang}); } catch { details[id] = null; }
+  }));
+}
+function analyse(show){
+  const d = details[show.id];
+  if (!d) return {group:'unknown'};
+  const t = today();
+  const seasons = (d.seasons || []).filter(s => s.season_number > 0);
+  const airedNums = seasons.filter(s => s.air_date && s.air_date <= t).map(s => s.season_number);
+  const latest = airedNums.length ? Math.max(...airedNums) : 0;
+  const next = d.next_episode_to_air;
+  const ended = ['Ended','Canceled'].includes(d.status);
+  const info = {d, latest, maxSeason:Math.max(latest, ...seasons.map(s=>s.season_number), 0), ended};
+  if (show.seen < latest){
+    const nextS = seasons.find(s => s.season_number === show.seen + 1);
+    const unseen = latest - show.seen;
+    const airing = next && next.season_number === latest;
+    let line = unseen > 1 ? `${unseen} unseen seasons. Next up: season ${show.seen + 1}` : `Season ${latest} is out`;
+    if (airing && unseen === 1) line = `Season ${latest} is airing now`;
+    const freshest = seasons.find(s => s.season_number === latest)?.air_date || '';
+    return {...info, group:'new', line, sortKey:freshest, nextS};
+  }
+  if (ended) return {...info, group:'done', line: d.status === 'Canceled' ? 'Cancelled. You\'ve seen it all' : 'Ended. You\'ve seen it all'};
+  const upcoming = seasons.find(s => s.season_number > latest);
+  const date = upcoming?.air_date || (next && next.season_number > latest ? next.air_date : null);
+  let line;
+  if (next && next.season_number === latest) line = `Season ${latest} still airing. Next episode ${fmtDate(next.air_date)}`;
+  else if (date) line = `Season ${upcoming?.season_number || latest + 1} starts ${fmtDate(date)}`;
+  else if (upcoming) line = `Season ${upcoming.season_number} announced, no date yet`;
+  else line = 'Caught up. No new season announced';
+  return {...info, group:'waiting', line, sortKey: date || '9999'};
+}
+function watchItemHTML(show, a){
+  const opts = [];
+  const max = Math.max(a.maxSeason || 0, show.seen);
+  for (let n = 0; n <= max; n++) opts.push(`<option value="${n}"${n===show.seen?' selected':''}>${n===0?'Not started':'Seen through S'+n}</option>`);
+  const markBtn = a.group === 'new' ? `<button class="small go" data-mark="${show.id}">Watched S${show.seen + 1}</button>` : '';
+  const avail = a.group === 'new' && seasonAvail[show.id] ? `<div style="margin-top:8px">${availabilityHTML(seasonAvail[show.id])}</div>` : '';
+  return `<article class="result">${posterHTML(a.d?.poster_path || show.poster)}<div class="info">
+    <p class="title">${esc(a.d?.name || show.name)}</p>
+    <p class="meta${a.group==='new'?' fresh':''}">${esc(a.line || 'Couldn\'t load show details')}</p>
+    ${avail}
+    <div class="actions">${markBtn}
+      <select class="small" data-seen="${show.id}" aria-label="Seasons seen">${opts.join('')}</select>
+      <button class="small remove" data-remove="${show.id}" aria-label="Remove ${esc(show.name)}">Remove</button>
+    </div></div></article>`;
+}
+let renderToken = 0;
+async function renderWatching(){
+  const out = $('watchList'), shows = Object.values(state.watching), my = ++renderToken;
+  if (!shows.length){
+    out.innerHTML = `<p class="status">No shows yet. Search for a series and tap “Add to Watching”.</p>`;
+    $('newBadge').textContent = ''; return;
+  }
+  if (!settings().apiKey){ out.innerHTML = `<p class="status">Add your TMDB key in Settings to load your shows.</p>`; return; }
+  if (shows.some(s => details[s.id] === undefined)) out.innerHTML = `<p class="status">Checking for new seasons…</p>`;
+  await loadDetails(shows.map(s => s.id));
+  const rows = shows.map(s => ({s, a:analyse(s)}));
+  const newOnes = rows.filter(r => r.a.group === 'new');
+  await Promise.all(newOnes.filter(r => !seasonAvail[r.s.id]).map(async r => { seasonAvail[r.s.id] = classify(await providersFor('tv', r.s.id)); }));
+  if (my !== renderToken) return;   // a newer render started
+  const by = g => rows.filter(r => r.a.group === g);
+  const newRows = by('new').sort((x,y) => y.a.sortKey.localeCompare(x.a.sortKey));
+  const waitRows = [...by('waiting').sort((x,y) => x.a.sortKey.localeCompare(y.a.sortKey)), ...by('unknown')];
+  const doneRows = by('done').sort((x,y) => (x.s.name||'').localeCompare(y.s.name||''));
+  const list = rs => rs.map(r => watchItemHTML(r.s, r.a)).join('');
+  out.innerHTML =
+    (newRows.length ? `<h2 class="group">New to watch</h2>${list(newRows)}` : '') +
+    (waitRows.length ? `<h2 class="group">Waiting for more</h2>${list(waitRows)}` : '') +
+    (doneRows.length ? `<details class="finished"><summary>Finished (${doneRows.length})</summary>${list(doneRows)}</details>` : '');
+  $('newBadge').textContent = newRows.length || '';
+}
+$('watchList').addEventListener('click', e => {
+  const m = e.target.closest('[data-mark]'), r = e.target.closest('[data-remove]');
+  if (m){ state.watching[m.dataset.mark].seen++; persist(); renderWatching(); }
+  if (r){
+    const s = state.watching[r.dataset.remove];
+    if (confirm(`Remove “${s.name}” from your list?`)){ delete state.watching[r.dataset.remove]; persist(); renderWatching(); renderSearch(); }
+  }
+});
+$('watchList').addEventListener('change', e => {
+  const sel = e.target.closest('[data-seen]'); if (!sel) return;
+  state.watching[sel.dataset.seen].seen = +sel.value; persist(); renderWatching();
+});
+
+/* ================= tabs ================= */
+function showTab(t){
+  for (const name of ['search','watching']){
+    $('tab-' + name).hidden = name !== t;
+    $('btn-' + name).setAttribute('aria-selected', name === t);
+  }
+  if (settings().tab !== t){ state.settings.tab = t; writeLS('couchbuddy', state); }  // device-level, no sync needed
+  if (t === 'watching') renderWatching();
+}
+document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+/* ================= settings dialog ================= */
+const dlg = $('settings');
+function fillSettings(){
+  $('apiKey').value = settings().apiKey; $('lang').value = settings().lang; $('ghToken').value = sync.token;
+  $('svcList').innerHTML = SERVICES.map(s => `
+    <label class="svc"><input type="checkbox" value="${s.id}" ${settings().services.includes(s.id)?'checked':''}>
+      <span class="dot" style="background:${s.color}"></span>${s.label}${s.optional?' <small style="color:var(--muted);font-weight:400">(free)</small>':''}</label>`).join('');
+  renderSyncInfo();
+}
+$('openSettings').onclick = () => { fillSettings(); dlg.showModal(); };
+$('settingsForm').addEventListener('submit', () => {
+  const langChanged = settings().lang !== $('lang').value;
+  state.settings.apiKey = $('apiKey').value.trim();
+  state.settings.lang = $('lang').value;
+  state.settings.services = [...$('svcList').querySelectorAll('input:checked')].map(i => i.value);
+  const newToken = $('ghToken').value.trim();
+  if (newToken !== sync.token){ sync = {token:newToken, gistId:'', lastSync:0, error:''}; writeLS('couchbuddy-sync', sync); }
+  if (langChanged) for (const k in details) delete details[k];
+  for (const k in seasonAvail) delete seasonAvail[k];
+  persist();
+  refreshAll();
+});
+$('syncNow').onclick = () => {
+  const t = $('ghToken').value.trim();
+  if (t !== sync.token){ sync = {token:t, gistId:'', lastSync:0, error:''}; writeLS('couchbuddy-sync', sync); }
+  doSync({pullFirst:true});
+};
+$('exportBtn').onclick = () => {
+  const blob = new Blob([JSON.stringify(state, null, 1)], {type:'application/json'});
+  const a = Object.assign(document.createElement('a'), {href:URL.createObjectURL(blob), download:`couchbuddy-backup-${today()}.json`});
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('importBtn').onclick = () => $('importFile').click();
+$('importFile').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!data.watching) throw 0;
+    if (!confirm(`Replace your current list with this backup (${Object.keys(data.watching).length} shows)?`)) return;
+    state = {...data, settings:Object.assign({}, DEFAULT_SETTINGS, data.settings)};
+    persist(); fillSettings(); refreshAll();
+  } catch { alert('That file is not a Couchbuddy backup.'); }
+  e.target.value = '';
+};
+
+/* ================= boot ================= */
+function refreshAll(){
+  $('onlyMine').checked = settings().onlyMine;
+  renderSearch();
+  if (!$('tab-watching').hidden) renderWatching(); else renderWatching(); // keeps badge current
+}
+$('onlyMine').onchange = e => { state.settings.onlyMine = e.target.checked; persist(); renderSearch(); };
+$('searchForm').addEventListener('submit', e => { e.preventDefault(); $('q').blur(); runSearch(); });
+
+showTab(Object.keys(state.watching).length ? (settings().tab || 'watching') : 'search');
+refreshAll();
+renderSyncInfo();
+if (sync.token) doSync({pullFirst:true});
+if (!settings().apiKey && !sync.token){ fillSettings(); dlg.showModal(); }
+</script>
+</body>
+</html>
