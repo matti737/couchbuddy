@@ -460,8 +460,10 @@ $('syncNow').onclick = () => {
   doSync({pullFirst:true});
 };
 $('exportBtn').onclick = () => {
-  const blob = new Blob([JSON.stringify(state, null, 1)], {type:'application/json'});
-  const a = Object.assign(document.createElement('a'), {href:URL.createObjectURL(blob), download:`couchbuddy-backup-${today()}.json`});
+  const name = `couchbuddy-backup-${today()}.json`, json = JSON.stringify(state, null, 1);
+  if (window.CouchbuddyNative){ window.CouchbuddyNative.saveFile(name, json); return; }  // Android app
+  const blob = new Blob([json], {type:'application/json'});
+  const a = Object.assign(document.createElement('a'), {href:URL.createObjectURL(blob), download:name});
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 $('importBtn').onclick = () => $('importFile').click();
