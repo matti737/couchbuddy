@@ -10,12 +10,28 @@ android {
         applicationId 'be.matti737.couchbuddy'
         minSdk 29
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        // Every GitHub build gets a higher number, so Android accepts it as an update.
+        def build = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+        versionCode build
+        versionName "1.${build}"
+    }
+
+    // Fixed key (checked in): APKs from different builds can update each other.
+    signingConfigs {
+        couchbuddy {
+            storeFile file('couchbuddy.keystore')
+            storePassword 'couchbuddy'
+            keyAlias 'couchbuddy'
+            keyPassword 'couchbuddy'
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.couchbuddy
+        }
         release {
+            signingConfig signingConfigs.couchbuddy
             minifyEnabled false
         }
     }
