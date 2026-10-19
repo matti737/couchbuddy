@@ -400,6 +400,7 @@ function removeItem(key){
 // Films: watched = true/false.
 const details = {};      // tmdb details per key, per session
 const seasonAvail = {};  // providers for the next unseen season, keyed "key-season"
+const availCache = {};   // providers for the whole series/film, keyed like state.watching
 async function loadDetails(keys){
   await Promise.all(keys.filter(k => details[k] === undefined).map(async k => {
     const [type, id] = k.split('-');
@@ -456,7 +457,8 @@ function watchItemHTML(key, item, a){
   if (!isTv && a.group === 'want' && a.released)
     markBtn = `<button class="small go" data-film="${key}">Mark watched</button>`;
   const sa = a.group === 'new' ? seasonAvail[key + '-' + (item.seen + 1)] : null;
-  const avail = sa ? `<div style="margin-top:8px">${seasonAvailHTML(sa)}</div>` : '';
+  const av = sa ? seasonAvailHTML(sa) : availCache[key] ? availabilityHTML(availCache[key]) : '';
+  const avail = av ? `<div style="margin-top:8px">${av}</div>` : '';
   return `<article class="result">${posterHTML(a.d?.poster_path || item.poster)}<div class="info">
     <p class="title">${esc(a.d?.name || a.d?.title || item.name)}</p>
     <p class="meta${a.group==='new'?' fresh':''}">${esc(a.line)}</p>
@@ -492,6 +494,10 @@ async function renderWatching(){
     const season = await seasonProvidersFor(r.item.id, n);
     seasonAvail[k] = season ? {...classify(season), season:n, exact:true}
                             : {...classify(await providersFor('tv', r.item.id)), season:n, exact:false};
+  }));
+  // Everything else: where the series or film streams as a whole.
+  await Promise.all(rows.filter(r => r.a.group !== 'new' && !availCache[r.key]).map(async r => {
+    availCache[r.key] = classify(await providersFor(r.item.type === 'movie' ? 'movie' : 'tv', r.item.id));
   }));
   if (my !== renderToken) return;   // a newer render started
   const byName = (x, y) => (x.item.name||'').localeCompare(y.item.name||'');
@@ -591,6 +597,7 @@ $('settingsForm').addEventListener('submit', () => {
   if (newToken !== sync.token){ sync = {token:newToken, gistId:'', lastSync:0, error:''}; writeLS('couchbuddy-sync', sync); }
   if (langChanged) for (const k in details) delete details[k];
   for (const k in seasonAvail) delete seasonAvail[k];
+  for (const k in availCache) delete availCache[k];
   persist();
   refreshAll();
 });
