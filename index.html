@@ -80,10 +80,14 @@ details.finished summary{cursor:pointer;font-weight:700;margin:22px 0 2px}
 .syncline.warn{color:var(--vrt)}
 
 /* settings */
-dialog{border:0;border-radius:18px;padding:0;width:min(92vw,460px);max-height:88vh;background:var(--surface);color:var(--ink)}
+dialog{border:0;border-radius:18px;padding:0;width:min(92vw,460px);max-height:88vh;overflow:auto;background:var(--surface);color:var(--ink)}
 dialog::backdrop{background:rgba(10,15,30,.55)}
 .sheet{padding:20px}
-.sheet h2{margin:0 0 4px;font-size:1.3rem}
+.sheet h2{margin:0;font-size:1.3rem}
+.sheet-head{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;
+  margin:-20px -20px 0;padding:14px 12px 10px 20px;background:var(--surface)}
+.close-x{width:40px;height:40px;border:0;border-radius:50%;background:none;color:var(--muted);font-size:1.6rem;line-height:1;cursor:pointer}
+.close-x:hover{background:var(--bg)}
 .sheet h3{margin:22px 0 2px;font-size:1rem}
 .sheet p{color:var(--muted);font-size:.85rem;margin:4px 0 8px}
 .sheet label.field{display:block;font-weight:500;margin:14px 0 6px}
@@ -129,7 +133,10 @@ dialog::backdrop{background:rgba(10,15,30,.55)}
 
 <dialog id="settings">
   <form method="dialog" class="sheet" id="settingsForm">
-    <h2>Settings</h2>
+    <div class="sheet-head">
+      <h2>Settings</h2>
+      <button type="button" class="close-x" id="closeSettings" aria-label="Close without saving">×</button>
+    </div>
 
     <label class="field" for="apiKey">TMDB API key or read access token</label>
     <input type="password" id="apiKey" autocomplete="off" spellcheck="false" placeholder="From themoviedb.org → Settings → API">
@@ -480,7 +487,14 @@ function fillSettings(){
       <span class="dot" style="background:${s.color}"></span>${s.label}${s.optional?' <small style="color:var(--muted);font-weight:400">(free)</small>':''}</label>`).join('');
   renderSyncInfo();
 }
-$('openSettings').onclick = () => { fillSettings(); dlg.showModal(); };
+// Close without saving: the ×, a tap outside the panel, Esc, or Android's back button.
+// Opening adds a history entry so the back button closes the panel instead of leaving the app.
+function openSettings(){ fillSettings(); dlg.showModal(); history.pushState({settings:true}, ''); }
+$('openSettings').onclick = openSettings;
+$('closeSettings').onclick = () => dlg.close();
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+dlg.addEventListener('close', () => { if (history.state?.settings) history.back(); });
+window.addEventListener('popstate', () => { if (dlg.open) dlg.close(); });
 $('settingsForm').addEventListener('submit', () => {
   const langChanged = settings().lang !== $('lang').value;
   state.settings.apiKey = $('apiKey').value.trim();
@@ -532,7 +546,7 @@ showTab('search');
 refreshAll();
 renderSyncInfo();
 if (sync.token) doSync({pullFirst:true});
-if (!settings().apiKey && !sync.token){ fillSettings(); dlg.showModal(); }
+if (!settings().apiKey && !sync.token) openSettings();
 </script>
 </body>
 </html>
