@@ -169,6 +169,9 @@ dialog::backdrop{background:rgba(10,15,30,.55)}
     <p>Saves your list and settings to a private GitHub Gist after every change. On a new device, paste the same token to restore everything.</p>
     <label class="field" for="ghToken">GitHub token (gist access only)</label>
     <input type="password" id="ghToken" autocomplete="off" spellcheck="false" placeholder="ghp_…">
+    <label class="field" for="profile">Profile</label>
+    <input type="text" id="profile" autocomplete="off" spellcheck="false" placeholder="Leave empty for the main list">
+    <p>Each profile has its own list and services, stored separately in the same GitHub account.</p>
     <p id="syncStatus"></p>
     <div class="row">
       <button type="button" class="small" id="syncNow">Sync now</button>
@@ -213,7 +216,8 @@ let state = readLS('couchbuddy') || {settings:{}, watching:{}, updatedAt:0};
 const legacy = readLS('wtw-settings');
 if (legacy && !state.settings.apiKey) state.settings = legacy;           // migrate from first version
 state = normalize(state);
-let sync = readLS('couchbuddy-sync') || {token:'', gistId:'', lastSync:0, error:''};
+// Device-only: GitHub token, which profile this device uses, and that profile's gist.
+let sync = Object.assign({token:'', profile:'', gistId:'', lastSync:0, error:''}, readLS('couchbuddy-sync'));
 
 const settings = () => state.settings;
 function persist(){                       // call after any change to synced data
@@ -224,7 +228,9 @@ function persist(){                       // call after any change to synced dat
 if (navigator.storage?.persist) navigator.storage.persist().catch(()=>{});
 
 /* ================= GitHub Gist sync ================= */
-const GIST_FILE = 'couchbuddy.json';
+// Each profile has its own file (and gist) in the same GitHub account. No profile = the main list.
+const slug = n => n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const gistFile = () => sync.profile ? `couchbuddy-${slug(sync.profile)}.json` : 'couchbuddy.json';
 async function gh(path, opts = {}){
   const res = await fetch('https://api.github.com' + path, {...opts, headers:{
     Authorization:'Bearer ' + sync.token, Accept:'application/vnd.github+json',
@@ -235,21 +241,21 @@ async function gh(path, opts = {}){
   return res.json();
 }
 async function findGist(){
-  if (sync.gistId){ const g = await gh('/gists/' + sync.gistId); if (g) return g; }
+  if (sync.gistId){ const g = await gh('/gists/' + sync.gistId); if (g?.files?.[gistFile()]) return g; }
   const list = await gh('/gists?per_page=100') || [];
-  const hit = list.find(g => g.files && g.files[GIST_FILE]);
+  const hit = list.find(g => g.files && g.files[gistFile()]);
   return hit ? gh('/gists/' + hit.id) : null;
 }
 async function readGistContent(g){
-  const f = g.files[GIST_FILE];
+  const f = g.files[gistFile()];
   if (f.truncated) return (await fetch(f.raw_url)).json();
   return JSON.parse(f.content);
 }
 async function push(){
-  const body = JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify(state, null, 1)}}});
+  const body = JSON.stringify({files:{[gistFile()]:{content:JSON.stringify(state, null, 1)}}});
   if (sync.gistId) await gh('/gists/' + sync.gistId, {method:'PATCH', body});
   else {
-    const g = await gh('/gists', {method:'POST', body:JSON.stringify({description:'Couchbuddy data (do not delete)', public:false, files:{[GIST_FILE]:{content:JSON.stringify(state, null, 1)}}})});
+    const g = await gh('/gists', {method:'POST', body:JSON.stringify({description:`Couchbuddy data${sync.profile ? ' (' + sync.profile + ')' : ''}. Do not delete`, public:false, files:{[gistFile()]:{content:JSON.stringify(state, null, 1)}}})});
     sync.gistId = g.id;
   }
 }
@@ -293,7 +299,7 @@ function renderSyncInfo(msg){
   if (msg) text = msg;
   else if (!sync.token){ text = 'Not backed up. Set up sync in Settings.'; warn = true; }
   else if (sync.error){ text = 'Backup failed: ' + sync.error; warn = true; }
-  else if (sync.lastSync) text = 'Backed up ' + new Date(sync.lastSync).toLocaleString('nl-BE', {dateStyle:'short', timeStyle:'short'});
+  else if (sync.lastSync) text = 'Backed up' + (sync.profile ? ` (${sync.profile})` : '') + ' ' + new Date(sync.lastSync).toLocaleString('nl-BE', {dateStyle:'short', timeStyle:'short'});
   else text = 'Backup pending';
   $('syncLine').textContent = text; $('syncLine').classList.toggle('warn', warn);
   $('syncStatus').textContent = text;
@@ -599,7 +605,7 @@ function renderIntro(){
 /* ================= settings dialog ================= */
 const dlg = $('settings');
 function fillSettings(){
-  $('apiKey').value = settings().apiKey; $('lang').value = settings().lang; $('ghToken').value = sync.token;
+  $('apiKey').value = settings().apiKey; $('lang').value = settings().lang; $('ghToken').value = sync.token; $('profile').value = sync.profile;
   $('svcList').innerHTML = SERVICES.map(s => `
     <label class="svc"><input type="checkbox" value="${s.id}" ${settings().services.includes(s.id)?'checked':''}>
       <span class="dot" style="background:${s.color}"></span>${s.label}${s.optional?' <small style="color:var(--muted);font-weight:400">(free)</small>':''}</label>`).join('');
@@ -618,19 +624,32 @@ $('settingsForm').addEventListener('submit', () => {
   state.settings.apiKey = $('apiKey').value.trim();
   state.settings.lang = $('lang').value;
   state.settings.services = [...$('svcList').querySelectorAll('input:checked')].map(i => i.value);
-  const newToken = $('ghToken').value.trim();
-  if (newToken !== sync.token){ sync = {token:newToken, gistId:'', lastSync:0, error:''}; writeLS('couchbuddy-sync', sync); }
+  applySyncFields();
   if (langChanged) for (const k in details) delete details[k];
   for (const k in seasonAvail) delete seasonAvail[k];
   for (const k in availCache) delete availCache[k];
   persist();
   refreshAll();
 });
-$('syncNow').onclick = () => {
-  const t = $('ghToken').value.trim();
-  if (t !== sync.token){ sync = {token:t, gistId:'', lastSync:0, error:''}; writeLS('couchbuddy-sync', sync); }
-  doSync({pullFirst:true});
-};
+// Token or profile changed: re-link this device. Switching profile starts from an empty list,
+// which is then filled from that profile's backup (or a new backup is created).
+function applySyncFields(){
+  const token = $('ghToken').value.trim(), profile = $('profile').value.trim();
+  if (token === sync.token && profile === sync.profile) return false;
+  if (profile !== sync.profile){
+    if (Object.keys(state.watching).length && !confirm(`Switch this device to ${profile ? `profile “${profile}”` : 'the main list'}? The list on this device will be replaced by that profile's list.`)){
+      $('profile').value = sync.profile;
+      if (token === sync.token) return false;
+    } else {
+      state.watching = {};
+      for (const c of [details, seasonAvail, availCache]) for (const k in c) delete c[k];
+    }
+  }
+  sync = {token, profile:$('profile').value.trim(), gistId:'', lastSync:0, error:''};
+  writeLS('couchbuddy-sync', sync);
+  return true;
+}
+$('syncNow').onclick = () => { if (applySyncFields()){ writeLS('couchbuddy', state); refreshAll(); } doSync({pullFirst:true}); };
 $('exportBtn').onclick = () => {
   const name = `couchbuddy-backup-${today()}.json`, json = JSON.stringify(state, null, 1);
   if (window.CouchbuddyNative){ window.CouchbuddyNative.saveFile(name, json); return; }  // Android app
