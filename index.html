@@ -76,6 +76,11 @@ nav.tabs button[aria-selected=true]{background:var(--bg);color:var(--ink)}
 select.small{padding-right:8px}
 .remove{margin-left:auto;color:var(--muted)}
 details.finished summary{cursor:pointer;font-weight:700;margin:22px 0 2px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:20;
+  display:flex;align-items:center;gap:14px;max-width:min(92vw,520px);padding:10px 10px 10px 16px;border-radius:12px;
+  background:var(--ink);color:var(--bg);font-size:.9rem;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.toast button{font:inherit;font-weight:700;border:0;background:none;color:var(--accent);padding:6px 8px;cursor:pointer;flex:none}
+@media (prefers-color-scheme:dark){.toast button{color:#2F5BEA}}
 .syncline{font-size:.8rem;color:var(--muted);text-align:center;margin-top:28px}
 .syncline.warn{color:var(--vrt)}
 
@@ -125,6 +130,8 @@ dialog::backdrop{background:rgba(10,15,30,.55)}
     <p class="syncline" id="syncLine"></p>
   </section>
 </main>
+
+<div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button type="button" id="toastUndo">Undo</button></div>
 
 <nav class="tabs" role="tablist">
   <button role="tab" id="btn-search" data-tab="search" aria-selected="true">Search</button>
@@ -399,7 +406,7 @@ function watchItemHTML(show, a){
   const opts = [];
   const max = Math.max(a.maxSeason || 0, show.seen);
   for (let n = 0; n <= max; n++) opts.push(`<option value="${n}"${n===show.seen?' selected':''}>${n===0?'Not started':'Seen through S'+n}</option>`);
-  const markBtn = a.group === 'new' ? `<button class="small go" data-mark="${show.id}">Watched S${show.seen + 1}</button>` : '';
+  const markBtn = a.group === 'new' ? `<button class="small go" data-mark="${show.id}">Mark S${show.seen + 1} watched</button>` : '';
   const sa = a.group === 'new' ? seasonAvail[show.id + '-' + (show.seen + 1)] : null;
   const avail = sa ? `<div style="margin-top:8px">${seasonAvailHTML(sa)}</div>` : '';
   return `<article class="result">${posterHTML(a.d?.poster_path || show.poster)}<div class="info">
@@ -445,7 +452,11 @@ async function renderWatching(){
 }
 $('watchList').addEventListener('click', e => {
   const m = e.target.closest('[data-mark]'), r = e.target.closest('[data-remove]');
-  if (m){ state.watching[m.dataset.mark].seen++; persist(); renderWatching(); }
+  if (m){
+    const show = state.watching[m.dataset.mark], before = show.seen;
+    show.seen++; persist(); renderWatching();
+    toast(`Marked S${show.seen} of ${show.name} watched`, () => { show.seen = before; persist(); renderWatching(); });
+  }
   if (r){
     const s = state.watching[r.dataset.remove];
     if (confirm(`Remove “${s.name}” from your list?`)){ delete state.watching[r.dataset.remove]; persist(); renderWatching(); renderSearch(); }
@@ -455,6 +466,15 @@ $('watchList').addEventListener('change', e => {
   const sel = e.target.closest('[data-seen]'); if (!sel) return;
   state.watching[sel.dataset.seen].seen = +sel.value; persist(); renderWatching();
 });
+
+/* ================= undo toast ================= */
+let toastTimer = null, toastUndo = null;
+function toast(msg, undo){
+  $('toastMsg').textContent = msg; toastUndo = undo;
+  $('toastUndo').hidden = !undo; $('toast').hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; toastUndo = null; }, 6000);
+}
+$('toastUndo').onclick = () => { const u = toastUndo; $('toast').hidden = true; toastUndo = null; clearTimeout(toastTimer); if (u) u(); };
 
 /* ================= tabs ================= */
 function showTab(t){
