@@ -26,6 +26,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:Onest,system-ui,
 main{max-width:640px;margin:0 auto;padding:16px 16px calc(96px + env(safe-area-inset-bottom,0px))}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 12px}
 h1{font-size:1.75rem;font-weight:800;letter-spacing:-.02em;margin:0;line-height:1.1}
+.home-link{font:inherit;color:inherit;letter-spacing:inherit;background:none;border:0;padding:0;cursor:pointer}
 h2.group{font-size:1rem;margin:22px 0 2px}
 .icon-btn{background:none;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:8px 14px;font:inherit;font-size:.9rem;cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -42,10 +43,16 @@ nav.tabs button[aria-selected=true]{background:var(--bg);color:var(--ink)}
 /* search */
 .search{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:4px 0 12px}
 .search form{display:flex;gap:8px}
-.search input{flex:1;min-width:0;font:inherit;font-size:1.05rem;padding:14px 16px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink)}
-.search input:focus{outline:none;border-color:var(--accent)}
+.search input[type=search]{flex:1;min-width:0;font:inherit;font-size:1.05rem;padding:14px 16px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink)}
+.search input[type=search]:focus{outline:none;border-color:var(--accent)}
 .search button,.primary{font:inherit;font-weight:700;padding:0 18px;border-radius:14px;border:0;background:var(--accent);color:#fff;cursor:pointer}
 .filter{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.9rem;color:var(--muted)}
+.intro{display:none;margin:0 0 14px;color:var(--muted);text-align:center}
+/* start screen: search bar centred until the first search */
+#tab-search.home .search{position:static;min-height:calc(100dvh - 210px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+  display:flex;flex-direction:column;justify-content:center;padding-bottom:12vh}
+#tab-search.home .intro{display:block}
+#tab-search.home .filter{justify-content:center}
 .status{color:var(--muted);padding:24px 4px;text-align:center}
 
 /* items */
@@ -59,6 +66,7 @@ nav.tabs button[aria-selected=true]{background:var(--bg);color:var(--ink)}
 .chip{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;color:#fff;font-weight:700;font-size:.85rem}
 .chip.optional{opacity:.8}
 .none{font-size:.9rem;color:var(--muted);margin:0}
+.avail-label{font-size:.8rem;color:var(--muted);margin:0 0 6px}
 .elsewhere{font-size:.8rem;color:var(--muted);margin:8px 0 0}
 .elsewhere a{color:var(--accent)}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
@@ -92,12 +100,13 @@ dialog::backdrop{background:rgba(10,15,30,.55)}
 <body>
 <main>
   <header>
-    <h1>Couchbuddy</h1>
+    <h1><button type="button" class="home-link" id="homeBtn">Couchbuddy</button></h1>
     <button class="icon-btn" id="openSettings" type="button">Settings</button>
   </header>
 
-  <section id="tab-search" role="tabpanel">
+  <section id="tab-search" role="tabpanel" class="home">
     <div class="search">
+      <p class="intro" id="intro"></p>
       <form id="searchForm">
         <input id="q" type="search" placeholder="Film or series title" autocomplete="off" enterkeyhint="search" aria-label="Search title">
         <button type="submit">Search</button>
@@ -114,8 +123,8 @@ dialog::backdrop{background:rgba(10,15,30,.55)}
 </main>
 
 <nav class="tabs" role="tablist">
-  <button role="tab" id="btn-watching" data-tab="watching" aria-selected="false">Watching<span class="badge" id="newBadge"></span></button>
   <button role="tab" id="btn-search" data-tab="search" aria-selected="true">Search</button>
+  <button role="tab" id="btn-watching" data-tab="watching" aria-selected="false">Watching<span class="badge" id="newBadge"></span></button>
 </nav>
 
 <dialog id="settings">
@@ -273,6 +282,15 @@ async function tmdb(path, params = {}){
 async function providersFor(type, id){
   try { return (await tmdb(`/${type}/${id}/watch/providers`)).results?.[COUNTRY] || null; } catch { return null; }
 }
+// Where one specific season streams. Null when TMDB/JustWatch has no Belgian data for that season.
+async function seasonProvidersFor(id, n){
+  try { return (await tmdb(`/tv/${id}/season/${n}/watch/providers`)).results?.[COUNTRY] || null; } catch { return null; }
+}
+function seasonAvailHTML(sa){
+  const n = sa.season;
+  if (sa.exact) return availabilityHTML(sa, {label:`Season ${n} streams on`, noneText:`Season ${n} isn't on your services`});
+  return availabilityHTML(sa, {note:`Series-wide info. Season ${n} not confirmed.`});
+}
 function classify(p){
   const offers = [...(p?.flatrate||[]), ...(p?.free||[]), ...(p?.ads||[])];
   const mine = new Set(), others = new Set();
@@ -283,10 +301,11 @@ function classify(p){
   }
   return {mine:[...mine], others:[...others], link:p?.link};
 }
-function availabilityHTML(a){
+function availabilityHTML(a, {label = '', noneText = 'Not on your services', note = ''} = {}){
   const chips = a.mine.map(id => { const s = SERVICES.find(x => x.id === id);
     return `<span class="chip${s.optional?' optional':''}" style="background:${s.color}">${s.label}</span>`; }).join('');
-  return (chips ? `<div class="chips">${chips}</div>` : `<p class="none">Not on your services</p>`)
+  return (chips ? (label ? `<p class="avail-label">${label}</p>` : '') + `<div class="chips">${chips}</div>` : `<p class="none">${noneText}</p>`)
+    + (chips && note ? `<p class="elsewhere">${note}</p>` : '')
     + (a.others.length ? `<p class="elsewhere">Also on: ${esc(a.others.join(', '))}</p>` : '')
     + (a.link ? `<p class="elsewhere"><a href="${esc(a.link)}" target="_blank" rel="noopener">All options incl. rent/buy</a></p>` : '');
 }
@@ -297,6 +316,7 @@ let lastResults = [];
 async function runSearch(){
   const q = $('q').value.trim(), out = $('results');
   if (!q) return;
+  $('tab-search').classList.remove('home');
   if (!settings().apiKey){ out.innerHTML = `<p class="status">Add your TMDB key in Settings to start searching.</p>`; return; }
   out.innerHTML = `<p class="status">Searching…</p>`;
   try {
@@ -333,7 +353,7 @@ $('results').addEventListener('click', e => {
 
 /* ================= watching tab ================= */
 const details = {};      // tmdb tv details, per session
-const seasonAvail = {};  // providers for shows with a new season
+const seasonAvail = {};  // providers for the next unseen season, keyed "showId-season"
 async function loadDetails(ids){
   await Promise.all(ids.filter(id => !details[id]).map(async id => {
     try { details[id] = await tmdb('/tv/' + id, {language:settings().lang}); } catch { details[id] = null; }
@@ -373,7 +393,8 @@ function watchItemHTML(show, a){
   const max = Math.max(a.maxSeason || 0, show.seen);
   for (let n = 0; n <= max; n++) opts.push(`<option value="${n}"${n===show.seen?' selected':''}>${n===0?'Not started':'Seen through S'+n}</option>`);
   const markBtn = a.group === 'new' ? `<button class="small go" data-mark="${show.id}">Watched S${show.seen + 1}</button>` : '';
-  const avail = a.group === 'new' && seasonAvail[show.id] ? `<div style="margin-top:8px">${availabilityHTML(seasonAvail[show.id])}</div>` : '';
+  const sa = a.group === 'new' ? seasonAvail[show.id + '-' + (show.seen + 1)] : null;
+  const avail = sa ? `<div style="margin-top:8px">${seasonAvailHTML(sa)}</div>` : '';
   return `<article class="result">${posterHTML(a.d?.poster_path || show.poster)}<div class="info">
     <p class="title">${esc(a.d?.name || show.name)}</p>
     <p class="meta${a.group==='new'?' fresh':''}">${esc(a.line || 'Couldn\'t load show details')}</p>
@@ -395,7 +416,14 @@ async function renderWatching(){
   await loadDetails(shows.map(s => s.id));
   const rows = shows.map(s => ({s, a:analyse(s)}));
   const newOnes = rows.filter(r => r.a.group === 'new');
-  await Promise.all(newOnes.filter(r => !seasonAvail[r.s.id]).map(async r => { seasonAvail[r.s.id] = classify(await providersFor('tv', r.s.id)); }));
+  // Check the next season you haven't seen; fall back to the whole series if that season has no data.
+  await Promise.all(newOnes.map(async r => {
+    const n = r.s.seen + 1, key = r.s.id + '-' + n;
+    if (seasonAvail[key]) return;
+    const season = await seasonProvidersFor(r.s.id, n);
+    seasonAvail[key] = season ? {...classify(season), season:n, exact:true}
+                              : {...classify(await providersFor('tv', r.s.id)), season:n, exact:false};
+  }));
   if (my !== renderToken) return;   // a newer render started
   const by = g => rows.filter(r => r.a.group === g);
   const newRows = by('new').sort((x,y) => y.a.sortKey.localeCompare(x.a.sortKey));
@@ -427,10 +455,21 @@ function showTab(t){
     $('tab-' + name).hidden = name !== t;
     $('btn-' + name).setAttribute('aria-selected', name === t);
   }
-  if (settings().tab !== t){ state.settings.tab = t; writeLS('couchbuddy', state); }  // device-level, no sync needed
   if (t === 'watching') renderWatching();
 }
 document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+function goHome(){
+  $('q').value = ''; lastResults = []; renderSearch();
+  $('tab-search').classList.add('home');
+  showTab('search'); window.scrollTo(0, 0);
+}
+$('homeBtn').onclick = goHome;
+function renderIntro(){
+  const names = SERVICES.filter(s => settings().services.includes(s.id)).map(s => s.label.replace(/ /g, '\u00A0'));
+  const list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names.at(-1) : (names[0] || 'your services');
+  $('intro').textContent = `Searches ${list} in Belgium`;
+}
 
 /* ================= settings dialog ================= */
 const dlg = $('settings');
@@ -482,13 +521,14 @@ $('importFile').onchange = async e => {
 /* ================= boot ================= */
 function refreshAll(){
   $('onlyMine').checked = settings().onlyMine;
+  renderIntro();
   renderSearch();
   if (!$('tab-watching').hidden) renderWatching(); else renderWatching(); // keeps badge current
 }
 $('onlyMine').onchange = e => { state.settings.onlyMine = e.target.checked; persist(); renderSearch(); };
 $('searchForm').addEventListener('submit', e => { e.preventDefault(); $('q').blur(); runSearch(); });
 
-showTab(Object.keys(state.watching).length ? (settings().tab || 'watching') : 'search');
+showTab('search');
 refreshAll();
 renderSyncInfo();
 if (sync.token) doSync({pullFirst:true});
