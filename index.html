@@ -75,10 +75,15 @@ nav.tabs button[aria-selected=true]{background:var(--bg);color:var(--ink)}
 .small.go{background:var(--new);border-color:var(--new);color:#fff;font-weight:700}
 select.small{padding-right:8px}
 .remove{margin-left:auto;color:var(--muted)}
-details.finished summary{cursor:pointer;font-weight:700;margin:22px 0 2px}
+details.section summary{cursor:pointer;font-weight:700;margin:18px 0 0;padding:6px 0;list-style:none;display:flex;align-items:center;gap:8px}
+details.section summary::-webkit-details-marker{display:none}
+details.section summary::before{content:'';width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;margin-right:4px}
+details.section[open] summary::before{transform:rotate(45deg) translateY(-2px)}
+.count{font-size:.8rem;font-weight:500;color:var(--muted)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:20;
-  display:flex;align-items:center;gap:14px;max-width:min(92vw,520px);padding:10px 10px 10px 16px;border-radius:12px;
+  display:flex;align-items:center;gap:14px;width:max-content;min-width:min(92vw,320px);max-width:min(92vw,520px);padding:10px 10px 10px 16px;border-radius:12px;
   background:var(--ink);color:var(--bg);font-size:.9rem;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.toast span{flex:1}
 .toast button{font:inherit;font-weight:700;border:0;background:none;color:var(--accent);padding:6px 8px;cursor:pointer;flex:none}
 @media (prefers-color-scheme:dark){.toast button{color:#2F5BEA}}
 .syncline{font-size:.8rem;color:var(--muted);text-align:center;margin-top:28px}
@@ -193,11 +198,18 @@ const DEFAULT_SETTINGS = {apiKey:'', lang:'en-US', services:SERVICES.map(s=>s.id
 function readLS(k){ try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
 function writeLS(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
 
+// Old versions stored series under their plain TMDB id; now keys are "tv-<id>" / "movie-<id>".
+function normalize(st){
+  st.settings = Object.assign({}, DEFAULT_SETTINGS, st.settings);
+  const w = {};
+  for (const [k, v] of Object.entries(st.watching || {})) w[k.includes('-') ? k : 'tv-' + k] = {type:'tv', ...v};
+  st.watching = w;
+  return st;
+}
 let state = readLS('couchbuddy') || {settings:{}, watching:{}, updatedAt:0};
 const legacy = readLS('wtw-settings');
 if (legacy && !state.settings.apiKey) state.settings = legacy;           // migrate from first version
-state.settings = Object.assign({}, DEFAULT_SETTINGS, state.settings);
-state.watching = state.watching || {};
+state = normalize(state);
 let sync = readLS('couchbuddy-sync') || {token:'', gistId:'', lastSync:0, error:''};
 
 const settings = () => state.settings;
@@ -252,14 +264,16 @@ async function doSync({pullFirst = false} = {}){
         sync.gistId = g.id;
         if (firstLink){
           // Linking a device: the backup wins, but keep any shows only this device has.
-          const localOnly = Object.fromEntries(Object.entries(state.watching).filter(([id]) => !remote.watching?.[id]));
-          state = {...remote, watching:{...remote.watching, ...localOnly}, settings:Object.assign({}, DEFAULT_SETTINGS, remote.settings)};
+          const remoteKeys = Object.keys(normalize({...remote}).watching);
+          const localOnly = Object.fromEntries(Object.entries(state.watching).filter(([k]) => !remoteKeys.includes(k)));
+          const r = normalize(remote);
+          state = {...r, watching:{...r.watching, ...localOnly}};
           if (!state.settings.apiKey && $('apiKey').value) state.settings.apiKey = $('apiKey').value.trim();
           state.updatedAt = Date.now();
           writeLS('couchbuddy', state);
           await push();
         } else if ((remote.updatedAt||0) > (state.updatedAt||0)){
-          state = {...remote, settings:Object.assign({}, DEFAULT_SETTINGS, remote.settings)};
+          state = normalize(remote);
           writeLS('couchbuddy', state);
         } else if ((remote.updatedAt||0) < (state.updatedAt||0)) await push();
         refreshAll();
@@ -327,6 +341,7 @@ const posterHTML = p => p ? `<img class="poster" src="https://image.tmdb.org/t/p
 
 /* ================= search tab ================= */
 let lastResults = [];
+const keyOf = r => `${r.media_type}-${r.id}`;
 async function runSearch(){
   const q = $('q').value.trim(), out = $('results');
   if (!q) return;
@@ -343,6 +358,12 @@ async function runSearch(){
     out.innerHTML = `<p class="status">${e.message === 'auth' ? 'TMDB rejected the key. Check it in Settings.' : 'Search failed. Check your connection and try again.'}</p>`;
   }
 }
+function seenSelectHTML(key, item){
+  const d = details[key], max = Math.max(seasonInfo(d).maxSeason, item.seen);
+  const opts = [];
+  for (let n = 0; n <= max; n++) opts.push(`<option value="${n}"${n===item.seen?' selected':''}>${n===0?'Not started':'Seen through S'+n}</option>`);
+  return `<select class="small" data-seen="${key}" aria-label="Seasons seen">${opts.join('')}</select>`;
+}
 function renderSearch(){
   const out = $('results');
   if (!lastResults.length){ out.innerHTML = ''; return; }
@@ -350,121 +371,167 @@ function renderSearch(){
   if (!shown.length){ out.innerHTML = `<p class="status">None of these titles are on your services in Belgium right now.</p>`; return; }
   out.innerHTML = shown.map(r => {
     const year = (r.release_date || r.first_air_date || '').slice(0,4);
-    const isTv = r.media_type === 'tv', tracked = isTv && state.watching[r.id];
-    const btn = isTv ? `<div class="actions"><button class="small${tracked?' on':''}" data-track="${r.id}">${tracked ? '✓ Watching' : '+ Add to Watching'}</button></div>` : '';
+    const isTv = r.media_type === 'tv', key = keyOf(r), item = state.watching[key];
+    const btn = item
+      ? `<button class="small on" data-track="${key}">✓ On your list</button>${isTv ? seenSelectHTML(key, item) : ''}`
+      : `<button class="small" data-track="${key}">+ Add to list</button>`;
     return `<article class="result">${posterHTML(r.poster_path)}<div class="info">
       <p class="title">${esc(r.title || r.name)}</p><p class="meta">${isTv?'Series':'Film'}${year?' ('+year+')':''}</p>
-      ${availabilityHTML(r.avail)}${btn}</div></article>`;
+      ${availabilityHTML(r.avail)}<div class="actions">${btn}</div></div></article>`;
   }).join('');
 }
 $('results').addEventListener('click', e => {
   const b = e.target.closest('[data-track]'); if (!b) return;
-  const id = b.dataset.track, r = lastResults.find(x => String(x.id) === id);
-  if (state.watching[id]) delete state.watching[id];
-  else state.watching[id] = {id:+id, name:r.name, poster:r.poster_path, seen:0, added:Date.now()};
+  const key = b.dataset.track;
+  if (state.watching[key]) { removeItem(key); return; }
+  const r = lastResults.find(x => keyOf(x) === key);
+  state.watching[key] = {id:r.id, type:r.media_type, name:r.title || r.name, poster:r.poster_path, seen:0, watched:false, added:Date.now()};
   persist(); renderSearch(); renderWatching();
+  if (r.media_type === 'tv') loadDetails([key]).then(renderSearch);   // fills the season dropdown
 });
+function removeItem(key){
+  const item = state.watching[key];
+  delete state.watching[key]; persist(); renderSearch(); renderWatching();
+  toast(`Removed ${item.name}`, () => { state.watching[key] = item; persist(); renderSearch(); renderWatching(); });
+}
 
 /* ================= watching tab ================= */
-const details = {};      // tmdb tv details, per session
-const seasonAvail = {};  // providers for the next unseen season, keyed "showId-season"
-async function loadDetails(ids){
-  await Promise.all(ids.filter(id => !details[id]).map(async id => {
-    try { details[id] = await tmdb('/tv/' + id, {language:settings().lang}); } catch { details[id] = null; }
+// Items are keyed "tv-123" / "movie-456". TV: seen = last season watched (0 = not started).
+// Films: watched = true/false.
+const details = {};      // tmdb details per key, per session
+const seasonAvail = {};  // providers for the next unseen season, keyed "key-season"
+async function loadDetails(keys){
+  await Promise.all(keys.filter(k => details[k] === undefined).map(async k => {
+    const [type, id] = k.split('-');
+    try { details[k] = await tmdb(`/${type}/${id}`, {language:settings().lang}); } catch { details[k] = null; }
   }));
 }
-function analyse(show){
-  const d = details[show.id];
-  if (!d) return {group:'unknown'};
+function seasonInfo(d){
   const t = today();
-  const seasons = (d.seasons || []).filter(s => s.season_number > 0);
+  const seasons = (d?.seasons || []).filter(s => s.season_number > 0);
   const airedNums = seasons.filter(s => s.air_date && s.air_date <= t).map(s => s.season_number);
   const latest = airedNums.length ? Math.max(...airedNums) : 0;
-  const next = d.next_episode_to_air;
-  const ended = ['Ended','Canceled'].includes(d.status);
-  const info = {d, latest, maxSeason:Math.max(latest, ...seasons.map(s=>s.season_number), 0), ended};
-  if (show.seen < latest){
-    const nextS = seasons.find(s => s.season_number === show.seen + 1);
-    const unseen = latest - show.seen;
-    const airing = next && next.season_number === latest;
-    let line = unseen > 1 ? `${unseen} unseen seasons. Next up: season ${show.seen + 1}` : `Season ${latest} is out`;
-    if (airing && unseen === 1) line = `Season ${latest} is airing now`;
-    const freshest = seasons.find(s => s.season_number === latest)?.air_date || '';
-    return {...info, group:'new', line, sortKey:freshest, nextS};
-  }
-  if (ended) return {...info, group:'done', line: d.status === 'Canceled' ? 'Cancelled. You\'ve seen it all' : 'Ended. You\'ve seen it all'};
+  return {t, seasons, latest, maxSeason:Math.max(latest, ...seasons.map(s => s.season_number), 0)};
+}
+function analyseFilm(item, d){
+  const rel = d?.release_date || '', year = rel.slice(0,4);
+  if (item.watched) return {group:'done', line:`Film${year ? ' ('+year+')' : ''}. Watched`};
+  if (rel && rel > today()) return {group:'want', line:`Film. Released ${fmtDate(rel)}`, released:false};
+  return {group:'want', line:`Film${year ? ' ('+year+')' : ''}`, released:true};
+}
+function analyseTv(item, d){
+  const {seasons, latest, maxSeason} = seasonInfo(d);
+  const next = d.next_episode_to_air, ended = ['Ended','Canceled'].includes(d.status);
   const upcoming = seasons.find(s => s.season_number > latest);
   const date = upcoming?.air_date || (next && next.season_number > latest ? next.air_date : null);
-  let line;
-  if (next && next.season_number === latest) line = `Season ${latest} still airing. Next episode ${fmtDate(next.air_date)}`;
-  else if (date) line = `Season ${upcoming?.season_number || latest + 1} starts ${fmtDate(date)}`;
-  else if (upcoming) line = `Season ${upcoming.season_number} announced, no date yet`;
-  else line = 'Caught up. No new season announced';
-  return {...info, group:'waiting', line, sortKey: date || '9999'};
+  const info = {latest, maxSeason};
+  if (item.seen === 0){
+    let line;
+    if (latest === 0) line = date ? `Premieres ${fmtDate(date)}` : 'Not released yet';
+    else line = `${latest} season${latest > 1 ? 's' : ''}` + (d.status === 'Canceled' ? '. Cancelled' : ended ? '. Ended' : '');
+    return {...info, group:'want', line};
+  }
+  if (item.seen < latest){
+    const unseen = latest - item.seen;
+    let line = unseen > 1 ? `${unseen} unseen seasons. Next up: season ${item.seen + 1}` : `Season ${latest} is out`;
+    if (next && next.season_number === latest && unseen === 1) line = `Season ${latest} is airing now`;
+    return {...info, group:'new', line, sortKey:seasons.find(s => s.season_number === latest)?.air_date || ''};
+  }
+  if (ended) return {...info, group:'done', line: d.status === 'Canceled' ? 'Cancelled. You\'ve seen it all' : 'Ended. You\'ve seen it all'};
+  if (next && next.season_number === latest) return {...info, group:'coming', line:`Season ${latest} still airing. Next episode ${fmtDate(next.air_date)}`, sortKey:next.air_date};
+  if (date) return {...info, group:'coming', line:`Season ${upcoming?.season_number || latest + 1} starts ${fmtDate(date)}`, sortKey:date};
+  if (upcoming) return {...info, group:'coming', line:`Season ${upcoming.season_number} announced, no date yet`, sortKey:'9999'};
+  return {...info, group:'waiting', line:'Caught up. No new season announced'};
 }
-function watchItemHTML(show, a){
-  const opts = [];
-  const max = Math.max(a.maxSeason || 0, show.seen);
-  for (let n = 0; n <= max; n++) opts.push(`<option value="${n}"${n===show.seen?' selected':''}>${n===0?'Not started':'Seen through S'+n}</option>`);
-  const markBtn = a.group === 'new' ? `<button class="small go" data-mark="${show.id}">Mark S${show.seen + 1} watched</button>` : '';
-  const sa = a.group === 'new' ? seasonAvail[show.id + '-' + (show.seen + 1)] : null;
+function analyse(key, item){
+  const d = details[key];
+  if (!d) return {group:'waiting', line:'Couldn\'t load details'};
+  return {d, ...(item.type === 'movie' ? analyseFilm(item, d) : analyseTv(item, d))};
+}
+function watchItemHTML(key, item, a){
+  const isTv = item.type !== 'movie';
+  let markBtn = '';
+  if (isTv && (a.group === 'new' || (a.group === 'want' && a.latest > 0)))
+    markBtn = `<button class="small go" data-mark="${key}">Mark S${item.seen + 1} watched</button>`;
+  if (!isTv && a.group === 'want' && a.released)
+    markBtn = `<button class="small go" data-film="${key}">Mark watched</button>`;
+  const sa = a.group === 'new' ? seasonAvail[key + '-' + (item.seen + 1)] : null;
   const avail = sa ? `<div style="margin-top:8px">${seasonAvailHTML(sa)}</div>` : '';
-  return `<article class="result">${posterHTML(a.d?.poster_path || show.poster)}<div class="info">
-    <p class="title">${esc(a.d?.name || show.name)}</p>
-    <p class="meta${a.group==='new'?' fresh':''}">${esc(a.line || 'Couldn\'t load show details')}</p>
+  return `<article class="result">${posterHTML(a.d?.poster_path || item.poster)}<div class="info">
+    <p class="title">${esc(a.d?.name || a.d?.title || item.name)}</p>
+    <p class="meta${a.group==='new'?' fresh':''}">${esc(a.line)}</p>
     ${avail}
-    <div class="actions">${markBtn}
-      <select class="small" data-seen="${show.id}" aria-label="Seasons seen">${opts.join('')}</select>
-      <button class="small remove" data-remove="${show.id}" aria-label="Remove ${esc(show.name)}">Remove</button>
+    <div class="actions">${markBtn}${isTv ? seenSelectHTML(key, item) : ''}
+      <button class="small remove" data-remove="${key}" aria-label="Remove ${esc(item.name)}">Remove</button>
     </div></div></article>`;
 }
+// Section open/closed state is per device.
+const SECTIONS = [
+  {id:'new',     title:'New to watch'},
+  {id:'coming',  title:'New season coming'},
+  {id:'want',    title:'Want to watch'},
+  {id:'waiting', title:'Waiting for news'},
+  {id:'done',    title:'Finished'},
+];
+const ui = Object.assign({closed:['done']}, readLS('couchbuddy-ui'));
 let renderToken = 0;
 async function renderWatching(){
-  const out = $('watchList'), shows = Object.values(state.watching), my = ++renderToken;
-  if (!shows.length){
-    out.innerHTML = `<p class="status">No shows yet. Search for a series and tap “Add to Watching”.</p>`;
+  const out = $('watchList'), entries = Object.entries(state.watching), my = ++renderToken;
+  if (!entries.length){
+    out.innerHTML = `<p class="status">Nothing here yet. Search for a series or film and tap “Add to list”.</p>`;
     $('newBadge').textContent = ''; return;
   }
-  if (!settings().apiKey){ out.innerHTML = `<p class="status">Add your TMDB key in Settings to load your shows.</p>`; return; }
-  if (shows.some(s => details[s.id] === undefined)) out.innerHTML = `<p class="status">Checking for new seasons…</p>`;
-  await loadDetails(shows.map(s => s.id));
-  const rows = shows.map(s => ({s, a:analyse(s)}));
-  const newOnes = rows.filter(r => r.a.group === 'new');
+  if (!settings().apiKey){ out.innerHTML = `<p class="status">Add your TMDB key in Settings to load your list.</p>`; return; }
+  if (entries.some(([k]) => details[k] === undefined)) out.innerHTML = `<p class="status">Checking for new seasons…</p>`;
+  await loadDetails(entries.map(([k]) => k));
+  const rows = entries.map(([key, item]) => ({key, item, a:analyse(key, item)}));
   // Check the next season you haven't seen; fall back to the whole series if that season has no data.
-  await Promise.all(newOnes.map(async r => {
-    const n = r.s.seen + 1, key = r.s.id + '-' + n;
-    if (seasonAvail[key]) return;
-    const season = await seasonProvidersFor(r.s.id, n);
-    seasonAvail[key] = season ? {...classify(season), season:n, exact:true}
-                              : {...classify(await providersFor('tv', r.s.id)), season:n, exact:false};
+  await Promise.all(rows.filter(r => r.a.group === 'new').map(async r => {
+    const n = r.item.seen + 1, k = r.key + '-' + n;
+    if (seasonAvail[k]) return;
+    const season = await seasonProvidersFor(r.item.id, n);
+    seasonAvail[k] = season ? {...classify(season), season:n, exact:true}
+                            : {...classify(await providersFor('tv', r.item.id)), season:n, exact:false};
   }));
   if (my !== renderToken) return;   // a newer render started
-  const by = g => rows.filter(r => r.a.group === g);
-  const newRows = by('new').sort((x,y) => y.a.sortKey.localeCompare(x.a.sortKey));
-  const waitRows = [...by('waiting').sort((x,y) => x.a.sortKey.localeCompare(y.a.sortKey)), ...by('unknown')];
-  const doneRows = by('done').sort((x,y) => (x.s.name||'').localeCompare(y.s.name||''));
-  const list = rs => rs.map(r => watchItemHTML(r.s, r.a)).join('');
-  out.innerHTML =
-    (newRows.length ? `<h2 class="group">New to watch</h2>${list(newRows)}` : '') +
-    (waitRows.length ? `<h2 class="group">Waiting for more</h2>${list(waitRows)}` : '') +
-    (doneRows.length ? `<details class="finished"><summary>Finished (${doneRows.length})</summary>${list(doneRows)}</details>` : '');
-  $('newBadge').textContent = newRows.length || '';
+  const byName = (x, y) => (x.item.name||'').localeCompare(y.item.name||'');
+  const sorters = {
+    new:     (x, y) => y.a.sortKey.localeCompare(x.a.sortKey),
+    coming:  (x, y) => x.a.sortKey.localeCompare(y.a.sortKey),
+    want:    (x, y) => (y.item.added||0) - (x.item.added||0),
+    waiting: byName, done: byName,
+  };
+  out.innerHTML = SECTIONS.map(sec => {
+    const rs = rows.filter(r => r.a.group === sec.id).sort(sorters[sec.id]);
+    if (!rs.length) return '';
+    return `<details class="section" data-sec="${sec.id}"${ui.closed.includes(sec.id) ? '' : ' open'}>
+      <summary>${sec.title} <span class="count">${rs.length}</span></summary>
+      ${rs.map(r => watchItemHTML(r.key, r.item, r.a)).join('')}</details>`;
+  }).join('');
+  $('newBadge').textContent = rows.filter(r => r.a.group === 'new').length || '';
 }
+$('watchList').addEventListener('toggle', e => {
+  const sec = e.target.dataset?.sec; if (!sec) return;
+  ui.closed = ui.closed.filter(s => s !== sec).concat(e.target.open ? [] : [sec]);
+  writeLS('couchbuddy-ui', ui);
+}, true);
 $('watchList').addEventListener('click', e => {
-  const m = e.target.closest('[data-mark]'), r = e.target.closest('[data-remove]');
+  const m = e.target.closest('[data-mark]'), f = e.target.closest('[data-film]'), r = e.target.closest('[data-remove]');
   if (m){
-    const show = state.watching[m.dataset.mark], before = show.seen;
-    show.seen++; persist(); renderWatching();
-    toast(`Marked S${show.seen} of ${show.name} watched`, () => { show.seen = before; persist(); renderWatching(); });
+    const item = state.watching[m.dataset.mark], before = item.seen;
+    item.seen++; persist(); renderWatching(); renderSearch();
+    toast(`Marked S${item.seen} of ${item.name} watched`, () => { item.seen = before; persist(); renderWatching(); renderSearch(); });
   }
-  if (r){
-    const s = state.watching[r.dataset.remove];
-    if (confirm(`Remove “${s.name}” from your list?`)){ delete state.watching[r.dataset.remove]; persist(); renderWatching(); renderSearch(); }
+  if (f){
+    const item = state.watching[f.dataset.film];
+    item.watched = true; persist(); renderWatching();
+    toast(`Marked ${item.name} watched`, () => { item.watched = false; persist(); renderWatching(); });
   }
+  if (r) removeItem(r.dataset.remove);
 });
-$('watchList').addEventListener('change', e => {
+document.addEventListener('change', e => {
   const sel = e.target.closest('[data-seen]'); if (!sel) return;
-  state.watching[sel.dataset.seen].seen = +sel.value; persist(); renderWatching();
+  state.watching[sel.dataset.seen].seen = +sel.value; persist(); renderWatching(); renderSearch();
 });
 
 /* ================= undo toast ================= */
@@ -545,8 +612,8 @@ $('importFile').onchange = async e => {
   try {
     const data = JSON.parse(await f.text());
     if (!data.watching) throw 0;
-    if (!confirm(`Replace your current list with this backup (${Object.keys(data.watching).length} shows)?`)) return;
-    state = {...data, settings:Object.assign({}, DEFAULT_SETTINGS, data.settings)};
+    if (!confirm(`Replace your current list with this backup (${Object.keys(data.watching).length} titles)?`)) return;
+    state = normalize(data);
     persist(); fillSettings(); refreshAll();
   } catch { alert('That file is not a Couchbuddy backup.'); }
   e.target.value = '';
