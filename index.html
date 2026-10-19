@@ -65,6 +65,9 @@ nav.tabs button[aria-selected=true]{background:var(--bg);color:var(--ink)}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;color:#fff;font-weight:700;font-size:.85rem}
 .chip.optional{opacity:.8}
+.chip.extra{background:none;color:var(--c);border:1.5px solid var(--c);padding:3.5px 9.5px}
+.stores{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:.8rem;color:var(--muted)}
+.chip.store{background:none;color:var(--muted);border:1px solid var(--line);font-weight:500;font-size:.78rem;padding:3px 9px}
 .none{font-size:.9rem;color:var(--muted);margin:0}
 .avail-label{font-size:.8rem;color:var(--muted);margin:0 0 6px}
 .elsewhere{font-size:.8rem;color:var(--muted);margin:8px 0 0}
@@ -319,23 +322,45 @@ function seasonAvailHTML(sa){
   if (sa.exact) return availabilityHTML(sa, {label:`Season ${n} streams on`, noneText:`Season ${n} isn't on your services`});
   return availabilityHTML(sa, {note:`Series-wide info. Season ${n} not confirmed.`});
 }
+// Strip ad-tier and channel suffixes so variants of one service show up once.
+const cleanName = n => n.replace(/\s+(standard|basic|premium)?\s*with ads$/i, '').replace(/\s+(amazon|apple tv) channel$/i, '').trim();
+// Sort TMDB's offers into: included in my services (mine), costs extra inside one of my
+// services (extra: rent/buy or a paid add-on channel), other streaming services (others),
+// and pay-per-title stores open to anyone (stores).
 function classify(p){
-  const offers = [...(p?.flatrate||[]), ...(p?.free||[]), ...(p?.ads||[])];
-  const mine = new Set(), others = new Set();
-  for (const o of offers){
-    const svc = SERVICES.find(s => s.match(o.provider_name.toLowerCase()));
-    if (svc && settings().services.includes(svc.id)) mine.add(svc.id);
-    else if (!svc) others.add(o.provider_name);
+  const has = id => settings().services.includes(id);
+  const mine = new Set(), extra = new Map(), others = new Set(), stores = new Set();
+  for (const o of [...(p?.flatrate||[]), ...(p?.free||[]), ...(p?.ads||[])]){
+    const n = o.provider_name, low = n.toLowerCase();
+    if (low.endsWith('amazon channel')){                       // add-on subscription sold inside Prime Video
+      if (has('prime')) extra.set('addon-' + low, {svc:'prime', label:`${cleanName(n)} add-on`});
+      else others.add(cleanName(n));
+      continue;
+    }
+    const svc = SERVICES.find(s => s.match(low));
+    if (svc && has(svc.id)) mine.add(svc.id);
+    else others.add(svc ? svc.label : cleanName(n));
   }
-  return {mine:[...mine], others:[...others], link:p?.link};
+  for (const o of [...(p?.rent||[]), ...(p?.buy||[])]){
+    const n = o.provider_name, low = n.toLowerCase();
+    if (has('prime') && (low === 'amazon video' || low.includes('amazon prime video'))) extra.set('prime-rent', {svc:'prime', label:'rent/buy'});
+    else stores.add(cleanName(n));
+  }
+  if (mine.has('prime')) extra.clear();                        // included anyway, no need to pay
+  return {mine:[...mine], extra:[...extra.values()], others:[...others], stores:[...stores], link:p?.link};
 }
 function availabilityHTML(a, {label = '', noneText = 'Not on your services', note = ''} = {}){
-  const chips = a.mine.map(id => { const s = SERVICES.find(x => x.id === id);
-    return `<span class="chip${s.optional?' optional':''}" style="background:${s.color}">${s.label}</span>`; }).join('');
+  const svc = id => SERVICES.find(x => x.id === id);
+  const chips = a.mine.map(id => { const s = svc(id);
+      return `<span class="chip${s.optional?' optional':''}" style="background:${s.color}">${s.label}</span>`; }).join('')
+    + (a.extra || []).map(x => { const s = svc(x.svc);
+      return `<span class="chip extra" style="--c:${s.color}">${s.label} · ${esc(x.label)}</span>`; }).join('');
+  const stores = (a.stores || []).map(n => `<span class="chip store">${esc(n)}</span>`).join('');
   return (chips ? (label ? `<p class="avail-label">${label}</p>` : '') + `<div class="chips">${chips}</div>` : `<p class="none">${noneText}</p>`)
     + (chips && note ? `<p class="elsewhere">${note}</p>` : '')
     + (a.others.length ? `<p class="elsewhere">Also on: ${esc(a.others.join(', '))}</p>` : '')
-    + (a.link ? `<p class="elsewhere"><a href="${esc(a.link)}" target="_blank" rel="noopener">All options incl. rent/buy</a></p>` : '');
+    + (stores ? `<div class="stores"><span>Rent or buy:</span>${stores}</div>` : '')
+    + (a.link ? `<p class="elsewhere"><a href="${esc(a.link)}" target="_blank" rel="noopener">All options on TMDB</a></p>` : '');
 }
 const posterHTML = p => p ? `<img class="poster" src="https://image.tmdb.org/t/p/w185${p}" alt="" loading="lazy">` : `<div class="poster"></div>`;
 
